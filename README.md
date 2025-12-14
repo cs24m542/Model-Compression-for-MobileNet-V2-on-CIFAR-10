@@ -107,6 +107,12 @@ wandb login
 
 You can run the full workflow using command-line arguments in main.py.
 
+## Train Model with Seed settings
+```bash
+    python main.py --train --wandb --seed 123
+```
+
+
 ## set seed
 Default seed used is 42 for entire project, but you can configure something else with --seed option
 ```bash
