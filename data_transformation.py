@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader, random_split
 import torchvision
 from torchvision import transforms
 
-def get_dataloaders(data_dir, batch_size, num_workers=4, val_split=5000):
+def get_dataloaders(data_dir, batch_size, num_workers=4, val_split=5000,seed=42):
     imagenet_mean = [0.485, 0.456, 0.406]
     imagenet_std = [0.229, 0.224, 0.225]
 
