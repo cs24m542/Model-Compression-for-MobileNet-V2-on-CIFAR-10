@@ -501,7 +501,8 @@ def Do_pruning(model_loaded,
                target_sparsity,
                K_steps,
                finetune_epochs_per_step,
-               baseline_val_acc):
+               baseline_val_acc,
+	       seed=42):
 
     df_results, pruned_model = iterative_layerwise_prune_and_finetune(
         base_model=copy.deepcopy(model_loaded),
