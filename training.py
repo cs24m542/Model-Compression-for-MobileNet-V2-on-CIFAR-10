@@ -5,6 +5,9 @@ import time
 from torchvision.models import mobilenet_v2, MobileNet_V2_Weights
 
 from utility import accuracy_from_logits, apply_masks_to_model
+import wandb
+
+from evaluation import evaluate
 
 # ------------------------------
 # MODEL CREATION
@@ -108,4 +111,176 @@ def finetune_with_masks(
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
 
     return best_val, best_state
+
+def train_model(model, train_loader, val_loader, config, device,with_wandb):
+    """
+    Two-phase training routine:
+    Phase 1: Train classifier head (freeze feature extractor)
+    Phase 2: Fine-tune entire network
+    
+    Args:
+        model: MobileNet model
+        train_loader: dataloader
+        val_loader: dataloader
+        config: config object with hyperparameters
+        device: torch device
+    
+    Returns:
+        best_state_dict: weights with best validation accuracy
+        history: dict of training logs
+        best_val_acc: best validation accuracy
+    """
+
+    criterion = nn.CrossEntropyLoss()
+    best_val_acc = 0.0
+    best_state_dict = None
+
+    HEAD_EPOCHS = config["head_epochs"]
+    TOTAL_EPOCHS = config["epochs"]
+
+    history = {
+        "epoch": [],
+        "phase": [],
+        "train_loss": [],
+        "train_acc": [],
+        "val_loss": [],
+        "val_acc": [],
+    }
+
+    # ------------------------------------------------------------
+    # PHASE 1 — Train classifier head only
+    # ------------------------------------------------------------
+    print("=== Phase 1: Train classifier head only ===")
+
+    # Freeze features
+    for param in model.features.parameters():
+        param.requires_grad = False
+
+    # Optimizer for head training
+    if config["optimizer"] == "SGD":
+        optimizer = optim.SGD(
+            filter(lambda p: p.requires_grad, model.parameters()),
+            lr=config["learning_rate_HT"],
+            momentum=config["momentum"],
+            weight_decay=config["weight_decay"]
+        )
+    else:
+        raise ValueError("Unsupported optimizer")
+
+    head_epochs = min(HEAD_EPOCHS, TOTAL_EPOCHS)
+
+    for epoch in range(1, head_epochs + 1):
+        start_time = time.time()
+
+        train_loss, train_acc = train_one_epoch(
+            model, train_loader, criterion, optimizer, device
+        )
+        val_loss, val_acc = evaluate(model, val_loader, criterion, device)
+
+        elapsed = time.time() - start_time
+
+        # Logging
+        history["epoch"].append(epoch)
+        history["phase"].append("head")
+        history["train_loss"].append(train_loss)
+        history["train_acc"].append(train_acc)
+        history["val_loss"].append(val_loss)
+        history["val_acc"].append(val_acc)
+        if(with_wandb):
+            wandb.log({
+                "epoch": epoch,
+                "phase": "head",
+                "train_loss": train_loss,
+                "train_accuracy": train_acc,
+                "val_loss": val_loss,
+                "val_accuracy": val_acc,
+        })
+
+        print(
+            f"[Head Epoch {epoch}/{TOTAL_EPOCHS}] "
+            f"Train Loss: {train_loss:.4f}  Train Acc: {train_acc:.2f}%  "
+            f"Val Loss: {val_loss:.4f}  Val Acc: {val_acc:.2f}%  "
+            f"Time: {elapsed:.1f}s"
+        )
+
+        # Track best validation accuracy
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_state_dict = model.state_dict()
+
+    # ------------------------------------------------------------
+    # PHASE 2 — Fine-tune all layers
+    # ------------------------------------------------------------
+    remaining_epochs = TOTAL_EPOCHS - head_epochs
+
+    if remaining_epochs > 0:
+        print("\n=== Phase 2: Fine-tune all layers ===")
+
+        # Unfreeze all layers
+        for param in model.features.parameters():
+            param.requires_grad = True
+
+        # Optimizer for FT
+        if config["optimizer"] == "SGD":
+            optimizer = optim.SGD(
+                model.parameters(),
+                lr=config["learning_rate_FT"],
+                momentum=config["momentum"],
+                weight_decay=config["weight_decay"]
+            )
+
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=remaining_epochs
+        )
+
+        for e in range(1, remaining_epochs + 1):
+            epoch = head_epochs + e
+            start_time = time.time()
+
+            train_loss, train_acc = train_one_epoch(
+                model, train_loader, criterion, optimizer, device
+            )
+            val_loss, val_acc = evaluate(model, val_loader, criterion, device)
+            elapsed = time.time() - start_time
+
+            scheduler.step()
+
+            # Logging
+            history["epoch"].append(epoch)
+            history["phase"].append("finetune")
+            history["train_loss"].append(train_loss)
+            history["train_acc"].append(train_acc)
+            history["val_loss"].append(val_loss)
+            history["val_acc"].append(val_acc)
+            
+            if(with_wandb):
+                wandb.log({
+                    "epoch": epoch,
+                    "phase": "finetune",
+                    "train_loss": train_loss,
+                    "train_accuracy": train_acc,
+                    "val_loss": val_loss,
+                    "val_accuracy": val_acc,
+                })
+
+            print(
+                f"[FT Epoch {epoch}/{TOTAL_EPOCHS}] "
+                f"Train Loss: {train_loss:.4f}  Train Acc: {train_acc:.2f}%  "
+                f"Val Loss: {val_loss:.4f}  Val Acc: {val_acc:.2f}%  "
+                f"Time: {elapsed:.1f}s"
+            )
+
+            # Track best validation accuracy
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                best_state_dict = model.state_dict()
+
+    print(f"\nBest Validation Accuracy = {best_val_acc:.2f}%")
+    #wandb.run.summary["final_val_accuracy"] = best_val_acc
+
+    return best_state_dict, history, best_val_acc
+
+
+
 
