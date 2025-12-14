@@ -107,9 +107,14 @@ wandb login
 
 You can run the full workflow using command-line arguments in main.py.
 
+## set seed
+Default seed used is 42 for entire project, but you can configure something else with --seed option
+```bash
+python main.py --seed 123 --sparsity 0.5 --weight_method int8 --act_method fp8_e5m3 --wandb
+```
 ### Train + Fine-Tune MobileNetV2
 ```bash
- python main.py --train
+ python main.py --train --seed 123 
 ```
 
 This runs:
@@ -120,7 +125,7 @@ This runs:
 
 - Saves final checkpoint: model_weights.pth
 
-## Prune the Model
+## Prune the Model 
 
 Example: prune to 60% sparsity, 8 pruning steps, 4 FT epochs each:
 ```bash 
