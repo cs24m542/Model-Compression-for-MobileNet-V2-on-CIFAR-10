@@ -7,7 +7,10 @@ from pathlib import Path
 
 # === Import your modularized files ===
 from data_transformation import get_dataloaders
-from training import create_model
+from training import (
+	create_model,
+	train_model
+)
 from evaluation import evaluate
 from compression import (
     Do_pruning,
@@ -20,12 +23,26 @@ from utility import (
 	set_seed
 )
 	
+g_config={
+        "epochs": 20,
+        "batch_size": 256,
+        "learning_rate_FT": 0.001 ,
+        "learning_rate_HT": 0.01,
+        "momentum":0.9,
+        "weight_decay":5e-4,
+        "optimizer": "SGD",
+	    "head_epochs": 5,
+        "model": "MobileNetV2"
+    }
+
 
 # -----------------------------------------------------------
 #  CLI ARGUMENTS
 # -----------------------------------------------------------
 def get_args():
     parser = argparse.ArgumentParser(description="MobileNetV2 Pruning + Quantization Pipeline")
+    parser.add_argument("--train", action="store_true",
+                        help="Enable training mode")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for reproducibility")
     parser.add_argument("--prune", type=float, default=None,
@@ -79,8 +96,37 @@ def main():
     # -------------------------
     #  Load Model (ImageNet-pretrained architecture)
     # -------------------------
-    model = create_model(num_classes=10, pretrained=False).to(device)
 
+    model = create_model(num_classes=10, pretrained=False).to(device)
+    # -------------------------
+    #  W&B Init (optional)
+    # -------------------------
+    if args.wandb:
+        wandb.init(
+            project="mobilenetv2-cifar10-compression",
+            config={
+                "prune": args.prune,
+                "quant_w": args.quant_w,
+                "quant_a": args.quant_a,
+                "epochs_ft": args.epochs_ft,
+                "steps": args.steps,
+            }
+        )
+
+    if(args.train):
+        del model
+        model = create_model(num_classes=10, pretrained=True).to(device)
+    # -------------------------
+        best_state_dict, history, best_val_acc = train_model(
+	        model,
+            train_loader,
+            val_loader, 
+            g_config, 
+            device,
+            args.wandb
+        )
+        #this will overwrite if we have saved weights already
+        torch.save(best_state_dict, "model_weights.pth")
     # Load fine-tuned checkpoint
     print(f"Loading checkpoint: {args.load_ckpt}")
     ckpt = torch.load(args.load_ckpt, map_location=device)
@@ -98,20 +144,6 @@ def main():
     orig_model_size = get_fp32_model_size_mb(model)
     print(f"Baseline FP32 Model Size = {orig_model_size:.3f} MB")
 
-    # -------------------------
-    #  W&B Init (optional)
-    # -------------------------
-    if args.wandb:
-        wandb.init(
-            project="mobilenetv2-cifar10-compression",
-            config={
-                "prune": args.prune,
-                "quant_w": args.quant_w,
-                "quant_a": args.quant_a,
-                "epochs_ft": args.epochs_ft,
-                "steps": args.steps,
-            }
-        )
 
     # -------------------------
     #  Step 1: PRUNING
