@@ -15,14 +15,19 @@ from compression import (
     get_fp32_model_size_mb,
     get_pruned_model_size_mb
 )
-from utility import compression_ratio
+from utility import (
+	compression_ratio,
+	set_seed
+)
+	
 
 # -----------------------------------------------------------
 #  CLI ARGUMENTS
 # -----------------------------------------------------------
 def get_args():
     parser = argparse.ArgumentParser(description="MobileNetV2 Pruning + Quantization Pipeline")
-
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducibility")
     parser.add_argument("--prune", type=float, default=None,
                         help="Target sparsity (e.g., 0.5). If not set, pruning is skipped.")
 
@@ -56,6 +61,7 @@ def get_args():
 # -----------------------------------------------------------
 def main():
     args = get_args()
+    set_seed(args.seed)
 
     # -------------------------
     #  Device
@@ -67,7 +73,7 @@ def main():
     #  Load CIFAR-10
     # -------------------------
     train_loader, val_loader, test_loader = get_dataloaders(
-        args.data_dir, args.batch_size
+        args.data_dir, args.batch_size,seed=args.seed
     )
 
     # -------------------------
@@ -124,7 +130,8 @@ def main():
             target_sparsity=args.prune,
             K_steps=args.steps,
             finetune_epochs_per_step=args.epochs_ft,
-            baseline_val_acc=baseline_acc
+            baseline_val_acc=baseline_acc,
+	    seed=args.seed
         )
 
         pruned_size = get_pruned_model_size_mb(pruned_model)
