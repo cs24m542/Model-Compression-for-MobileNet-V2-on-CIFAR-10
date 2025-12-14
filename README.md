@@ -112,18 +112,6 @@ Default seed used is 42 for entire project, but you can configure something else
 ```bash
 python main.py --seed 123 --sparsity 0.5 --weight_method int8 --act_method fp8_e5m3 --wandb
 ```
-### Train + Fine-Tune MobileNetV2
-```bash
- python main.py --train --seed 123 
-```
-
-This runs:
-
-- Head-only training
-
-- Full finetuning
-
-- Saves final checkpoint: model_weights.pth
 
 ## Prune the Model 
 
